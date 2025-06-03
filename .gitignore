@@ -1,0 +1,10 @@
+venv
+**/.mypy_cache/
+**/__pycache__/
+**/.pytest_cache/
+**/.vscode/
+**/json_task_tracker/
+
+# project 1 
+
+/Task Traker/json_task_tracker
