@@ -5,6 +5,8 @@ from argparse import ArgumentParser
 from pprint import pprint
 from typing import Optional, Literal, Callable, TypedDict, get_args
 
+JSON_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'task_tracker_db')
+
 STATUS = Literal['todo', 'in-progress', 'done']
 
 class TaskProperties(TypedDict):
@@ -103,11 +105,11 @@ def get_queries(sup_queries: dict[str, SupportedQueryProperties]) -> tuple[dict,
     return args, queries
 
 
-def create_db_dir(folder_name: str='json_task_tracker') -> None:
+def create_db_dir(folder_name: str=JSON_DB_PATH) -> None:
     os.makedirs(folder_name, exist_ok=True)
 
 
-def open_task_db(file_name: str = 'tasks.json', folder_name: str='json_task_tracker') -> dict[str, TaskProperties]:
+def open_task_db(file_name: str ='tasks.json', folder_name: str=JSON_DB_PATH) -> dict[str, TaskProperties]:
     create_db_dir(folder_name)
     try:
         with open(f'{folder_name}/{file_name}', 'r', encoding='utf-8') as js_file:
@@ -121,7 +123,7 @@ def open_task_db(file_name: str = 'tasks.json', folder_name: str='json_task_trac
     return task_tracker
 
 
-def save_to_task_db(task_tracker: Optional[dict[str, TaskProperties]] = None, file_name: str = 'tasks.json', folder_name: str='json_task_tracker') -> None:
+def save_to_task_db(task_tracker: Optional[dict[str, TaskProperties]] = None, file_name: str='tasks.json', folder_name: str=JSON_DB_PATH) -> None:
     with open(f'{folder_name}/{file_name}', 'w', encoding='utf-8') as js_file:
         json.dump(task_tracker, js_file, indent=4)
 
