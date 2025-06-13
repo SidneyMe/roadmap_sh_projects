@@ -4,7 +4,8 @@ venv
 **/.pytest_cache/
 **/.vscode/
 **/json_task_tracker/
-
+**/.coverage
+**/htmlcov
 # project 1 
 
 /Task Traker/json_task_tracker
