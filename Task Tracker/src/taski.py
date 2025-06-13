@@ -3,7 +3,6 @@ import json
 from datetime import datetime
 from argparse import ArgumentParser
 from pprint import pprint
-import sys
 from typing import Optional, Literal, Callable, TypedDict, get_args
 
 STATUS = Literal['todo', 'in-progress', 'done']
@@ -113,6 +112,10 @@ def open_task_db(file_name: str = 'tasks.json', folder_name: str='json_task_trac
     try:
         with open(f'{folder_name}/{file_name}', 'r', encoding='utf-8') as js_file:
             task_tracker = json.load(js_file)
+            required_fields = {'task_id', 'description', 'status', 'createdAt', 'updatedAt'}
+            for task in task_tracker.values():
+                if not required_fields.issubset(task):
+                    raise ValueError(f"Missing required fields in task: {task}")
     except FileNotFoundError:
         task_tracker = {}
     return task_tracker
@@ -122,8 +125,11 @@ def save_to_task_db(task_tracker: Optional[dict[str, TaskProperties]] = None, fi
     with open(f'{folder_name}/{file_name}', 'w', encoding='utf-8') as js_file:
         json.dump(task_tracker, js_file, indent=4)
 
-
 def add_task(task_tracker: dict[str, TaskProperties], description: str) -> dict[str, TaskProperties]:
+    if not isinstance(task_tracker, dict):
+        raise TypeError("Task Tracker should not be empty and should be dict")
+    if not description or not isinstance(description, str):
+        raise TypeError("Description should not be empty and should be a string")
     creation_date = datetime.now().isoformat()
     task_id = str(max(map(int, task_tracker.keys()), default=0) + 1)
     task_tracker[task_id] ={
@@ -137,34 +143,52 @@ def add_task(task_tracker: dict[str, TaskProperties], description: str) -> dict[
 
 
 def delete_task(task_tracker: dict[str, TaskProperties], task_id: str) -> dict[str, TaskProperties]:
+    if not task_tracker or not isinstance(task_tracker, dict):
+        raise TypeError("Task Tracker should not be empty and should be dict")
+    if not task_id or not isinstance(task_id, str):
+        raise TypeError("Task id should not be be empty and should be a string")
     try:
         del task_tracker[task_id]
-    except KeyError:
-        print(f'Task id {task_id} not found')
+    except KeyError as exc:
+        raise KeyError(f'Task id {task_id} not found') from exc
     return task_tracker
 
 
-def update_task(task_tracker: dict[str, TaskProperties], task_id: str, description: Optional[str]=None, status: Optional[STATUS]=None) -> dict[str, TaskProperties]:
+def update_task(task_tracker: dict[str, TaskProperties], task_id: str, description: Optional[str]='', status: Optional[STATUS]='todo') -> dict[str, TaskProperties]:
     try:
-        if status not in get_args(STATUS) and status is not None:
+        if not task_tracker or not isinstance(task_tracker, dict):
+            raise TypeError("Task Tracker should not be empty and should be dict")
+        if not task_id or not isinstance(task_id, str):
+            raise TypeError("Task id should not be be empty and should be a string")
+        if not isinstance(description, str):
+            raise TypeError("Description should not be empty and should be a string")
+        if not status or not isinstance(status, str):
+            raise TypeError('Status should not be empty and should be a string')
+        if status not in get_args(STATUS):
             raise ValueError(f"Status only accepts following args -> {get_args(STATUS)}")
 
-        if description:
+        if description is not None:
             task_tracker[task_id]['description'] = description
         if status:
             task_tracker[task_id]['status'] = status
         task_tracker[task_id]['updatedAt'] = datetime.now().isoformat()
-    except KeyError:
-        print(f'Task id {task_id} not found')
+    except KeyError as exc:
+        raise KeyError(f'Task id {task_id} not found') from exc
     return task_tracker
 
 
 def list_tasks(task_tracker: dict[str, TaskProperties], status: Optional[STATUS]=None) -> None:
-    for _, task in task_tracker.items():
-        if not status:
-            pprint(task, sort_dicts=False)
-        elif task['status'] == status:
-            pprint(task, sort_dicts=False)
+    if isinstance(task_tracker, dict):
+        if status in get_args(STATUS) or status is None:
+            for _, task in task_tracker.items():
+                if not status:
+                    pprint(task, sort_dicts=False)
+                elif task['status'] == status:
+                    pprint(task, sort_dicts=False)
+        else:
+            raise ValueError(f"Status only accepts following args -> {get_args(STATUS)}")
+    else:
+        raise TypeError(f'List tasks accepts a dict got: {task_tracker}')
 
 
 def main() -> None:
@@ -172,10 +196,7 @@ def main() -> None:
     task_manager = open_task_db()
     args, queries = get_queries(sup_queries=supported_queries())
 
-    try:
-        queries(task_manager, **args)
-    except KeyError:
-        sys.exit('No task found with the provided ID')
+    queries(task_manager, **args)
 
     save_to_task_db(task_manager)
 
