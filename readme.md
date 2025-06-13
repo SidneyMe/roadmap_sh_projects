@@ -4,7 +4,7 @@ This repository contains solutions to projects from [roadmap.sh/projects](https:
 
 ---
 
-### Project 1: Task Tracker
+### Project 1: [Task Tracker](https://roadmap.sh/projects/task-tracker)
 
 A simple cli application that saves given description of a task into json.
 
