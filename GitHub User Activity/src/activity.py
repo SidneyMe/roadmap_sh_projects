@@ -1,5 +1,9 @@
 import requests
 import argparse
+import asyncio
+import aiohttp
+import itertools as it
+from datetime import datetime
 from typing import TypedDict, Callable, Any
 from tabulate import tabulate
 
@@ -23,6 +27,7 @@ EVENT_DICT = {
 }
 
 API_ENDPOINT = 'https://api.github.com/users/{username}/events?per_page=100&page={page}'
+API_RATE_LIMIT = 'https://api.github.com/rate_limit'
 
 class SupportedQueryArgs(TypedDict, total=False):
     name_or_flags: list[str]
@@ -36,6 +41,9 @@ class SupportedQueryProperties(TypedDict):
     target: Callable
     help: str
     args: list[SupportedQueryArgs]
+
+class RequestLimit(Exception):
+    pass
 
 def _queries() -> dict[str, SupportedQueryProperties]:
     return{
@@ -90,44 +98,55 @@ def get_supported_queries() -> tuple[dict[str, Any], Callable]:
 
     return args, queries
 
-def _get_page(username: str, n_pages: int=1) -> list[Any]:
-    pages = []
-    for i in range(0, n_pages):
-        url = API_ENDPOINT.format(username=username, page=i)
-        page = requests.get(url, timeout=10)
-        if page.status_code != 200:
-            raise requests.ConnectionError(f'Exited with status {page.status_code}')
-        else:
-            pages.extend(page.json())
-    return pages
+def get_remaining_api_calls() -> tuple[int, int]:
+    rate_limit = requests.get(API_RATE_LIMIT, timeout=10)
+    if rate_limit.status_code == 200:
+        rate_limit = rate_limit.json()
+        calls_remaining = rate_limit['rate']['remaining']
+        reset_time = rate_limit['rate']['reset']
+        return (int(calls_remaining), int(reset_time))
+    else:
+        raise requests.exceptions.ConnectionError(f'Exited with status {rate_limit.status_code}')
 
-def _get_activity(username: str, n_pages: int=1) -> dict[str, dict[str, str]]:
-    activity = {}
-    content = _get_page(username, n_pages)
-    for event in content:
+async def _get_page(session: aiohttp.client.ClientSession, username: str, page: int) -> Any:
+    url = API_ENDPOINT.format(username=username, page=page)
+    async with session.get(url) as page_resp:
+        if page_resp.status == 403:
+            raise requests.exceptions.ConnectionError('You have exceeded the API limit')
+        if page_resp.status != 200:
+            raise requests.exceptions.ConnectionError(f'Exited with status {page_resp.status}')
+        else:
+            return await page_resp.json()
+
+async def _get_activity(username: str, n_pages: int) -> dict[str, dict[str, str]]:
+    async with aiohttp.ClientSession() as session:
+        content = await asyncio.gather(*(_get_page(session, username, curr_page) for curr_page in range(1, n_pages+1)))
+
+    activity: dict = {}
+    for event in it.chain.from_iterable(content):
         event_type = event['type']
         repo_name = event['repo']['name']
         if event_type not in EVENT_DICT:
-            raise KeyError(f'Even is not recognized: {event_type}')
+            raise KeyError(f'Event is not recognized: {event_type}')
 
         activity.setdefault(repo_name, {})
         activity[repo_name][event_type] = activity[repo_name].get(event_type, 0) + 1
 
     return activity
 
-def print_activity(username: str, p: int, **kwargs) -> None:
-    if not p and not isinstance(p, int):
+async def print_activity(username: str, p: int=1, **kwargs) -> None:
+    if p <= 0 or not isinstance(p, int):
         raise ValueError(f'Number of pages should be a positive int got: {type(p)}')
     if not username or not isinstance(username, str):
         raise ValueError(f'Username should be str got: {type(username)}')
 
-    activity_dct = _get_activity(username, p)
     active_event_types = []
     for event, name in EVENT_DICT.items():
         arg_name = name.replace(' ', '_')
         if kwargs.get(arg_name, False):
             active_event_types.append(event)
 
+    activity_dct = await _get_activity(username, p)
     activity_display = []
     for project, _ in activity_dct.items():
         for activity, activity_count in activity_dct[project].items():
@@ -141,12 +160,21 @@ def print_activity(username: str, p: int, **kwargs) -> None:
 
     print(tabulate(
         activity_display,
-        headers=['Activity', 'Commit count', 'Project name']
+        headers=['Activity', 'Activity Count', 'Project name']
     ))
 
 def main():
+
+    api_limit, reset_time = get_remaining_api_calls()
+    if api_limit and api_limit <= 1:
+            raise RequestLimit(f"You have run out of api calls. Try after {datetime.fromtimestamp(reset_time)}")
+
     args, queries = get_supported_queries()
-    queries(**args)
+    asyncio.run(queries(**args))
+
+    if api_limit and api_limit <= 10:
+        print(f"Warning you have {api_limit} calls left")
+    
 
 if __name__ == '__main__':
     main()
